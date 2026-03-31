@@ -1,0 +1,179 @@
+services:
+  data-base:
+    image: mysql:8.0
+    container_name: data-base
+    environment:
+      MYSQL_ROOT_PASSWORD: Winners@05
+      MYSQL_DATABASE: patients_db
+      MYSQL_ROOT_HOST: '%'
+    ports:
+      - '3306:3306'
+    expose:
+      - '3306'
+    volumes:
+      - patient-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-pWinners@05" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - emsi-network
+  data-base-doctor:
+    image: mysql:8.0
+    container_name: data-base-doctor
+    environment:
+      MYSQL_ROOT_PASSWORD: Winners@05
+      MYSQL_DATABASE: doctors-db
+      MYSQL_ROOT_HOST: '%'
+    ports:
+      - '3307:3306'
+    expose:
+      - '3306'
+    volumes:
+      - doctor-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping" ,"-h", "localhost", "-uroot", "-pWinners@05" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - emsi-network
+  data-base-appointment:
+    image: mysql:8.0
+    container_name: data-base-appointment
+    environment:
+      MYSQL_ROOT_PASSWORD: Winners@05
+      MYSQL_DATABASE: appointment-db
+      MYSQL_ROOT_HOST: '%'
+    ports:
+      - '3308:3306'
+    expose:
+      - '3306'
+    volumes:
+      - appointment-data:/var/lib/mysql
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping" ,"-h", "localhost", "-uroot", "-pWinners@05" ]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - emsi-network
+  emsi-cabinet-discovery-service:
+    build: ./discovery-service
+    container_name: discovery-service
+    ports:
+      - '8761:8761'
+    expose:
+      - '8761'
+    healthcheck:
+      test: ["CMD","curl","-f","http://localhost:8761/actuator/health"]
+      interval: 10s
+      retries: 5
+    networks:
+      - emsi-network
+  emsi-cabinet-config-service:
+    build: ./config-service
+    container_name: config-service
+    ports:
+      - '9999:9999'
+    expose:
+      - '9999'
+    environment:
+      - DISCOVERY_SERVICE_URL=http://emsi-cabinet-discovery-service:8761/eureka
+    healthcheck:
+      test: [ "CMD","curl","-f","http://localhost:9999/actuator/health" ]
+      interval: 10s
+      retries: 5
+    depends_on:
+      emsi-cabinet-discovery-service:
+        condition: service_healthy
+    networks:
+      - emsi-network
+  emsi-cabinet-patient-service:
+    build: ./patient-service
+    container_name: patient-service
+    ports:
+      - '8085:8085'
+    expose:
+      - '8085'
+    environment:
+      - CONFIG_SERVICE_URL=http://emsi-cabinet-config-service:9999
+      - DISCOVERY_SERVICE_URL=http://emsi-cabinet-discovery-service:8761/eureka
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8085/actuator/health"]
+      interval: 10s
+      retries: 5
+    depends_on:
+      emsi-cabinet-config-service:
+        condition: service_healthy
+      data-base:
+        condition: service_healthy
+    networks:
+      - emsi-network
+    restart: always
+  emsi-cabinet-doctor-service:
+    build: ./doctor-service
+    container_name: doctor-service
+    ports:
+      - '8086:8086'
+    expose:
+      - '8086'
+    environment:
+      - CONFIG_SERVICE_URL=http://emsi-cabinet-config-service:9999
+      - DISCOVERY_SERVICE_URL=http://emsi-cabinet-discovery-service:8761/eureka
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/actuator/health"]
+      interval: 10s
+      retries: 5
+    depends_on:
+      emsi-cabinet-config-service:
+        condition: service_healthy
+      data-base-doctor:
+        condition: service_healthy
+    networks:
+      - emsi-network
+    restart: always
+  emsi-cabinet-appointment-service:
+    build: ./appointment-service
+    container_name: appointment-service
+    ports:
+      - '8087:8087'
+    expose:
+      - '8087'
+    environment:
+      - CONFIG_SERVICE_URL=http://emsi-cabinet-config-service:9999
+      - DISCOVERY_SERVICE_URL=http://emsi-cabinet-discovery-service:8761/eureka
+    depends_on:
+      data-base-appointment:
+        condition: service_healthy
+      emsi-cabinet-patient-service:
+        condition: service_healthy
+      emsi-cabinet-doctor-service:
+        condition: service_healthy
+    networks:
+      - emsi-network
+    restart: always
+  emsi-cabinet-gateway-service:
+    build: ./gateway-service
+    container_name: gateway-service
+    ports:
+      - '8888:8888'
+    expose:
+      - '8888'
+    environment:
+      - CONFIG_SERVICE_URL=http://emsi-cabinet-config-service:9999
+      - DISCOVERY_SERVICE_URL=http://emsi-cabinet-discovery-service:8761/eureka
+    depends_on:
+      emsi-cabinet-config-service:
+        condition: service_healthy
+    networks:
+      - emsi-network
+    restart: always
+networks:
+  emsi-network:
+    driver: bridge
+volumes:
+  patient-data:
+  doctor-data:
+  appointment-data:
